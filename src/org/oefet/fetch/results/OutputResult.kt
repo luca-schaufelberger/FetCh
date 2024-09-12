@@ -1,20 +1,19 @@
 package org.oefet.fetch.results
 
-import jisa.experiment.ResultList
-import jisa.experiment.ResultTable
 import jisa.maths.interpolation.Interpolation
-import org.oefet.fetch.*
-import org.oefet.fetch.quantities.*
-import org.oefet.fetch.gui.elements.OutputPlot
+import jisa.results.DoubleColumn
+import jisa.results.ResultList
+import jisa.results.ResultTable
+import org.oefet.fetch.EPSILON
 import org.oefet.fetch.gui.images.Images
 import org.oefet.fetch.measurement.Output
+import org.oefet.fetch.quantities.*
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-class OutputResult(data: ResultTable, extraParams: List<Quantity> = emptyList()) :
-    FetChResult("Output Measurement", "Output", Images.getImage("output.png"), data, extraParams) {
+class OutputResult(data: ResultTable) : FetChResult("Output Measurement", "Output", Images.getImage("output.png"), data) {
 
     val SET_SD_VOLTAGE = data.findColumn(Output.SET_SD_VOLTAGE)
     val SET_SG_VOLTAGE = data.findColumn(Output.SET_SG_VOLTAGE)
@@ -48,18 +47,19 @@ class OutputResult(data: ResultTable, extraParams: List<Quantity> = emptyList())
 
         try {
 
-            val fwd = ResultList("V", "G", "I")
-            val bwd = ResultList("V", "G", "I")
-            val SDV = 0
-            val SGV = 1
-            val SDI = 2
+            val SDV = DoubleColumn("V")
+            val SGV = DoubleColumn("G")
+            val SDI = DoubleColumn("I")
+
+            val fwd = ResultList(SDV, SGV, SDI)
+            val bwd = ResultList(SDV, SGV, SDI)
 
             for ((gate, data) in data.split(SET_SG_VOLTAGE)) {
 
-                val fb = data.splitTwoWaySweep { it[SET_SD_VOLTAGE] }
+                val fb = data.directionalSplit { it[SET_SD_VOLTAGE] }
 
-                for (row in fb.forward)  fwd.addData(row[SET_SD_VOLTAGE], gate, row[SD_CURRENT])
-                for (row in fb.backward) bwd.addData(row[SET_SD_VOLTAGE], gate, row[SD_CURRENT])
+                for (row in fb[0]) fwd.addData(row[SET_SD_VOLTAGE], gate, row[SD_CURRENT])
+                for (row in fb[1]) bwd.addData(row[SET_SD_VOLTAGE], gate, row[SD_CURRENT])
 
             }
 
@@ -68,10 +68,10 @@ class OutputResult(data: ResultTable, extraParams: List<Quantity> = emptyList())
 
             for ((drain, data) in fwd.split(SDV)) {
 
-                if (data.numRows < 2) continue
+                if (data.rowCount < 2) continue
 
-                val vG      = data.getColumns(SGV)
-                val iD      = data.getColumns(SDI)
+                val vG      = data.toList(SGV)
+                val iD      = data.toList(SDI)
                 val linGrad = Interpolation.interpolate1D(vG, iD.map { x -> abs(x) }).derivative()
                 val satGrad = Interpolation.interpolate1D(vG, iD.map { x -> sqrt(abs(x)) }).derivative()
 
@@ -79,27 +79,16 @@ class OutputResult(data: ResultTable, extraParams: List<Quantity> = emptyList())
 
                     val linMobility = 1e4 * abs((length / (capacitance * width)) * (linGrad.value(gate) / drain))
                     val satMobility = 1e4 * 2.0 * satGrad.value(gate).pow(2) * length / (width * capacitance)
-                    val params      = ArrayList(parameters)
-                    params         += Gate(gate, 0.0)
-                    params         += Drain(drain, 0.0)
+                    val params      = parameters + Gate(gate, 0.0) + Drain(drain, 0.0)
 
                     if (linMobility.isFinite()) {
-                        quantities += FwdLinMobility(
-                            linMobility,
-                            0.0,
-                            params,
-                            possibleParameters
-                        )
-                        maxLinMobility[gate] = max(maxLinMobility[gate] ?: 0.0, linMobility)
+                        quantities           += FwdLinMobility(linMobility, 0.0, params, possibleParameters)
+                        maxLinMobility[gate]  = max(maxLinMobility[gate] ?: 0.0, linMobility)
                     }
+
                     if (satMobility.isFinite()) {
-                        quantities += FwdSatMobility(
-                            satMobility,
-                            0.0,
-                            params,
-                            possibleParameters
-                        )
-                        maxSatMobility[gate] = max(maxSatMobility[gate] ?: 0.0, satMobility)
+                        quantities           += FwdSatMobility(satMobility, 0.0, params, possibleParameters)
+                        maxSatMobility[gate]  = max(maxSatMobility[gate] ?: 0.0, satMobility)
                     }
 
                 }
@@ -108,10 +97,10 @@ class OutputResult(data: ResultTable, extraParams: List<Quantity> = emptyList())
 
             for ((drain, data) in bwd.split(SDV)) {
 
-                if (data.numRows < 2) continue
+                if (data.rowCount < 2) continue
 
-                val vG      = data.getColumns(SGV)
-                val iD      = data.getColumns(SDI)
+                val vG      = data.toMatrix(SGV)
+                val iD      = data.toMatrix(SDI)
                 val linGrad = Interpolation.interpolate1D(vG, iD.map { x -> abs(x) }).derivative()
                 val satGrad = Interpolation.interpolate1D(vG, iD.map { x -> sqrt(abs(x)) }).derivative()
 
@@ -147,11 +136,11 @@ class OutputResult(data: ResultTable, extraParams: List<Quantity> = emptyList())
             }
 
             for ((gate, max) in maxLinMobility) {
-                quantities += MaxLinMobility(max, 0.0, ArrayList(parameters).apply { add(Gate(gate, 0.0)) })
+                quantities += MaxLinMobility(max, 0.0, parameters + Gate(gate, 0.0))
             }
 
             for ((gate, max) in maxSatMobility) {
-                quantities += MaxSatMobility(max, 0.0, ArrayList(parameters).apply { add(Gate(gate, 0.0)) })
+                quantities += MaxSatMobility(max, 0.0, parameters + Gate(gate, 0.0))
             }
 
 
@@ -161,6 +150,6 @@ class OutputResult(data: ResultTable, extraParams: List<Quantity> = emptyList())
 
     }
 
-    override fun calculateHybrids(otherQuantities: List<Quantity>): List<Quantity> = emptyList()
+    override fun calculateHybrids(otherQuantities: List<Quantity<*>>): List<Quantity<*>> = emptyList()
 
 }

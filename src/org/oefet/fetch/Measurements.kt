@@ -1,11 +1,17 @@
 package org.oefet.fetch
 
 import jisa.experiment.Measurement
-import jisa.experiment.ResultTable
-import jisa.gui.Plot
+import jisa.gui.Element
+import jisa.results.Column
+import jisa.results.ResultTable
+import org.oefet.fetch.measurement.ACHall
+import org.oefet.fetch.measurement.Conductivity
+import org.oefet.fetch.measurement.FetChMeasurement
+import org.oefet.fetch.measurement.MeasurementTemplate
 import org.oefet.fetch.quantities.Quantity
-import org.oefet.fetch.results.*
-import org.oefet.fetch.measurement.*
+import org.oefet.fetch.results.ACHallResult
+import org.oefet.fetch.results.CondResult
+import org.oefet.fetch.results.FetChResult
 import org.reflections.Reflections
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -18,6 +24,7 @@ object Measurements {
 
     val types = Reflections("org.oefet.fetch.measurement")
         .getSubTypesOf(FetChMeasurement::class.java)
+        .filter { it != MeasurementTemplate::class.java }
         .map { Config(it.getConstructor().newInstance()) }
         .sortedBy { it.name }
 
@@ -26,41 +33,42 @@ object Measurements {
         val type   = example.tag
         val name   = example.name
         val mClass = example::class
+        val image  = example.image
         val rClass = (example::processResults).reflect()?.returnType?.jvmErasure
 
         fun createMeasurement(): FetChMeasurement                                             = mClass.primaryConstructor!!.call()
-        fun createResult(data: ResultTable, extra: List<Quantity> = emptyList()): FetChResult = example.processResults(data, extra)
-        fun createPlot(data: ResultTable)                                                     = example.createPlot(data)
+        fun createResult(data: ResultTable): FetChResult = example.processResults(data)
+        fun createPlot(data: ResultTable)                                                     = example.createDisplay(data)
 
 
     }
 
-    fun loadResultFile(data: ResultTable, extra: List<Quantity> = emptyList()): FetChResult? {
+    fun loadResultFile(data: ResultTable): FetChResult? {
 
-        return types.find { it.type == data.getAttribute("Type") }?.createResult(data, extra) ?: convertFile(data, extra)
+        return types.find { it.type == data.getAttribute("Type") }?.createResult(data) ?: convertFile(data)
 
     }
 
-    fun createPlot(data: ResultTable): Plot? {
+    fun createElement(data: ResultTable): Element? {
 
         return types.find { it.type == data.getAttribute("Type") }?.createPlot(data)
 
     }
 
-    fun createPlot(result: FetChResult): Plot? {
+    fun createElement(result: FetChResult): Element? {
         return types.find { it.rClass == result::class }?.createPlot(result.data)
     }
 
-    fun createPlot(measurement: Measurement): Plot? {
+    fun createElement(measurement: Measurement): Element? {
         return types.find { it.mClass == measurement::class }?.createPlot(measurement.results)
     }
 
     /**
      * Converts files from the old HallSpinner application for use in FetCh
      */
-    private fun convertFile(data: ResultTable, extra: List<Quantity> = emptyList()): FetChResult? {
+    private fun convertFile(data: ResultTable, extra: List<Quantity<*>> = emptyList()): FetChResult? {
 
-        when (data.getName(0)) {
+        when (data.getColumn(0).name) {
 
             "No." -> {
 
@@ -77,7 +85,7 @@ object Measurements {
                 newData.setAttribute("Dielectric Thickness", "4.0E-7 m")
                 newData.setAttribute("Dielectric Permittivity", "2.05")
                 newData.setAttribute("Name", "Old Data")
-                newData.setAttribute("T", "${data.getMax(1).roundToInt()} K")
+                newData.setAttribute("T", "${data.max(data.getColumn(1) as Column<Double>).roundToInt()} K")
 
                 for (row in data) {
 
@@ -99,17 +107,17 @@ object Measurements {
                         0.47093,
                         row[2],
                         row[8] - startX,
-                        (data.getMax {it[8] - startX}) * 0.2,
+                        (data.max {it[8] - startX}) * 0.2,
                         row[9] - startY,
-                        (data.getMax {it[9] - startY}) * 0.2,
+                        (data.max {it[9] - startY}) * 0.2,
                         h,
-                        data.getMax{sqrt((it[8] - startX).pow(2) + (it[9] - startY).pow(2))} * 0.115,
+                        data.max{sqrt((it[8] - startX).pow(2) + (it[9] - startY).pow(2))} * 0.115,
                         row[1]
                     )
 
                 }
 
-                return ACHallResult(newData, extra)
+                return ACHallResult(newData)
 
             }
 
@@ -126,7 +134,7 @@ object Measurements {
                 newData.setAttribute("Dielectric Thickness", "4.0E-7 m")
                 newData.setAttribute("Dielectric Permittivity", "2.05")
                 newData.setAttribute("Name", "Old Data")
-                newData.setAttribute("T", "${data.getMax(0)} K")
+                newData.setAttribute("T", "${data.max(data.getColumn(0) as Column<Double>)} K")
 
                 for (row in data) {
 
@@ -134,7 +142,7 @@ object Measurements {
 
                 }
 
-                return CondResult(newData, extra)
+                return CondResult(newData)
 
             }
 

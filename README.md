@@ -1,14 +1,16 @@
 <h1 align="center"><img src="https://i.imgur.com/4Me4gtE.png"/><br/>FetCh - FET Characterisation Suite</h1>
 
 <p align="center">
-  <a href="https://i.imgur.com/g5bXpHz.png">
-    <img src="https://i.imgur.com/RbSCpKP.png"/>  
+  <a href="fetchExpose.png">
+    <img src="fetchExpose.png"/>  
   </a>
 </p>
 
+Measurement suite for common FET and other electrical measurements, based on the [JISA](https://github.com/OE-FET/JISA) library.
+
 ## *Fetching* and Running FetCh
 
-1. Make sure you have Java 11 or newer ([download](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot))
+1. Make sure you have Java 11 or newer ([download](https://adoptium.net/en-GB/temurin/releases/?version=11))
 2. Download the executable jar file: [FetCh.jar](https://github.com/OE-FET/FETTER/raw/master/FetCh.jar)
 3. Run the jar file (you should just need to double-click it)
 

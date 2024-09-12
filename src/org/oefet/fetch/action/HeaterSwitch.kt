@@ -3,22 +3,21 @@ package org.oefet.fetch.action
 import jisa.control.RTask
 import jisa.devices.interfaces.EMController
 import jisa.devices.power.IPS120
-import jisa.experiment.ResultTable
+import jisa.enums.Icon
 import jisa.gui.Colour
-import jisa.gui.Plot
+import jisa.results.ResultTable
 import org.oefet.fetch.gui.elements.FetChPlot
-import java.lang.Exception
 
-class HeaterSwitch : FetChAction("Heater Switch") {
+class HeaterSwitch : FetChAction("Heater Switch", Icon.RESISTOR.blackImage) {
 
     var task: RTask? = null
 
-    val on  by input ("Basic", "On", false)
-    val ips by requiredConfig("IPS", EMController::class)
+    val on  by userInput ("Basic", "On", false)
+    val ips by requiredInstrument("IPS", EMController::class)
 
-    val plot = FetChPlot("Heater Switch").apply { isLegendVisible = false; pointOrdering = Plot.Sort.ORDER_ADDED; }
+    val plot = FetChPlot("Heater Switch").apply { isLegendVisible = false; }
 
-    override fun createPlot(data: ResultTable): FetChPlot = plot
+    override fun createDisplay(data: ResultTable): FetChPlot = plot
 
     override fun run(results: ResultTable) {
 

@@ -1,7 +1,7 @@
 package org.oefet.fetch.gui.elements
 
-import jisa.experiment.ResultTable
 import jisa.gui.Series
+import jisa.results.ResultTable
 import org.oefet.fetch.measurement.Transfer
 import kotlin.math.abs
 
@@ -20,15 +20,8 @@ class TransferPlot(data: ResultTable) : FetChPlot("Transfer Curve", "SG Voltage 
 
     init {
 
-        isMouseEnabled = true
-        yAxisType = AxisType.LOGARITHMIC
-        pointOrdering = Sort.ORDER_ADDED
-
-        if (data.numRows > 0) {
-            legendRows = data.getUniqueValues(SET_SG_VOLTAGE).size
-        } else {
-            legendColumns = 2
-        }
+        isMouseEnabled     = true
+        yAxisType          = AxisType.LOGARITHMIC
 
         createSeries()
             .setMarkerVisible(false)
@@ -38,6 +31,7 @@ class TransferPlot(data: ResultTable) : FetChPlot("Transfer Curve", "SG Voltage 
         createSeries()
             .setMarkerVisible(false)
             .setLineDash(Series.Dash.DOTTED)
+            .setLineWidth(1.25)
             .watch(data, { it[SG_VOLTAGE] }, { abs(it[SG_CURRENT]) })
             .split(SET_SD_VOLTAGE, "G (SD: %sV)")
 

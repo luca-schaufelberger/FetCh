@@ -3,24 +3,28 @@ package org.oefet.fetch.sweep
 import jisa.Util
 import jisa.control.RTask
 import jisa.devices.interfaces.TC
-import jisa.experiment.Col
-import jisa.experiment.ResultTable
+import jisa.enums.Icon
 import jisa.experiment.queue.Action
 import jisa.experiment.queue.MeasurementAction
 import jisa.gui.Colour
+import jisa.gui.Plot
 import jisa.gui.Series
 import jisa.maths.Range
+import jisa.results.Column
+import jisa.results.ResultTable
 import org.oefet.fetch.action.FetChAction
+import org.oefet.fetch.action.TemperatureChange.Companion.TEMPERATURE
+import org.oefet.fetch.action.TemperatureChange.Companion.TIME
 import org.oefet.fetch.gui.elements.FetChPlot
 import java.util.*
 
-class TemperatureSweep : FetChSweep<Double>("Temperature Sweep", "T") {
+class TemperatureSweep : FetChSweep<Double>("Temperature Sweep", "T", Icon.THERMOMETER.blackImage) {
 
-    val temperatures  by input("Temperature", "Set-Points [K]", Range.step(50, 300, 50))
-    val interval      by input("Temperature", "Logging Interval [s]", 0.5) map { it.toMSec().toLong() }
-    val stabilityPct  by input("Temperature", "Stays within [%]", 1.0)
-    val stabilityTime by input("Temperature", "For at least [s]", 600.0) map { it.toMSec().toLong() }
-    val tControl      by optionalConfig("Temperature Controller", TC::class)
+    val temperatures  by userInput("Temperature", "Set-Points [K]", Range.step(50, 300, 50))
+    val interval      by userInput("Temperature", "Logging Interval [s]", 0.5) map { it.toMSec().toLong() }
+    val stabilityPct  by userInput("Temperature", "Stays within [%]", 1.0)
+    val stabilityTime by userTimeInput("Temperature", "For at least", 600000)
+    val loop          by requiredInstrument("Temperature Controller", TC.Loop::class)
 
 
     override fun getValues(): List<Double> = temperatures.array().toList()
@@ -29,7 +33,7 @@ class TemperatureSweep : FetChSweep<Double>("Temperature Sweep", "T") {
 
         val list = LinkedList<Action<*>>()
 
-        list += MeasurementAction(SweepPoint(value, interval, stabilityPct, stabilityTime, tControl))
+        list += MeasurementAction(SweepPoint(value, interval, stabilityPct, stabilityTime.toLong()))
         list += actions
 
         return list
@@ -38,41 +42,41 @@ class TemperatureSweep : FetChSweep<Double>("Temperature Sweep", "T") {
 
     override fun formatValue(value: Double): String = "$value K"
 
-    class SweepPoint(val temperature: Double, val interval: Long, val stabilityPct: Double, val stabilityTime: Long, val tControl: TC?) : FetChAction("Change Temperature") {
+    inner class SweepPoint(
+        val temperature: Double,
+        val interval: Long,
+        val stabilityPct: Double,
+        val stabilityTime: Long
+    ) : FetChAction("Change Temperature", Icon.THERMOMETER.blackImage) {
 
-        var task: RTask? = null
+        private var task:   RTask?  = null
+        private var series: Series? = null
 
-        override fun createPlot(data: ResultTable): FetChPlot {
+        override fun createDisplay(data: ResultTable): FetChPlot {
 
-            val plot =  FetChPlot("Change Temperature to $temperature K", "Time [s]", "Temperature [K]")
-
-            plot.createSeries()
-                .watch(data, { it[0] }, { (1 + (stabilityPct / 100.0)) * temperature })
-                .setMarkerVisible(false)
-                .setLineWidth(1.0)
-                .setLineDash(Series.Dash.DASHED)
-                .setColour(Colour.GREY)
-
-            plot.createSeries()
-                .watch(data, { it[0] }, { (1 - (stabilityPct / 100.0)) * temperature })
-                .setMarkerVisible(false)
-                .setLineWidth(1.0)
-                .setLineDash(Series.Dash.DASHED)
-                .setColour(Colour.GREY)
-
-            plot.createSeries()
-                .watch(data, 0, 1)
-                .setMarkerVisible(false)
-                .setColour(Colour.RED)
-
-            plot.createSeries()
-                .watch(data, 0, 1)
-                .filter { Util.isBetween(it[1], (1 - (stabilityPct / 100.0)) * temperature, (1 + (stabilityPct / 100.0)) * temperature) }
-                .setMarkerVisible(false)
-                .setLineWidth(3.0)
-                .setColour(Colour.MEDIUMSEAGREEN)
+            val plot = FetChPlot("Change Temperature to $temperature K", "Time", "Temperature [K]")
 
             plot.isLegendVisible = false
+            plot.xAxisType = Plot.AxisType.TIME
+
+            plot.createSeries()
+                .watch(data, { it[TIME] / 1000.0 }, { (1 + (stabilityPct / 100.0)) * temperature })
+                .setMarkerVisible(false)
+                .setLineWidth(1.0)
+                .setLineDash(Series.Dash.DASHED)
+                .setColour(Colour.GREY)
+
+            plot.createSeries()
+                .watch(data, { it[TIME] / 1000.0 }, { (1 - (stabilityPct / 100.0)) * temperature })
+                .setMarkerVisible(false)
+                .setLineWidth(1.0)
+                .setLineDash(Series.Dash.DASHED)
+                .setColour(Colour.GREY)
+
+            series = plot.createSeries()
+                .watch(data, { it[TIME] / 1000.0 }, { it[TEMPERATURE] })
+                .setMarkerVisible(false)
+                .setColour(Colour.RED)
 
             return plot
 
@@ -80,17 +84,31 @@ class TemperatureSweep : FetChSweep<Double>("Temperature Sweep", "T") {
 
         override fun run(results: ResultTable) {
 
-            if (tControl == null) {
+            if (loop == null) {
                 throw Exception("Temperature Controller is not configured")
             }
 
-            task = RTask(interval) { t -> results.addData(t.secFromStart, tControl.temperature) }
+            val min = (1 - (stabilityPct / 100.0)) * temperature
+            val max = (1 + (stabilityPct / 100.0)) * temperature
+
+            val input = loop.input
+
+            task = RTask(interval) { _ ->
+
+                val t = input.value
+
+                results.addData(System.currentTimeMillis(), t)
+
+                series?.colour = if (Util.isBetween(t, min, max)) { Colour.TEAL } else { Colour.RED }
+
+            }
+
             task?.start()
 
-            tControl.temperature = temperature
-            tControl.useAutoHeater()
+            loop.setPoint     = temperature
+            loop.isPIDEnabled = true
 
-            tControl.waitForStableTemperature(temperature, stabilityPct, stabilityTime)
+            loop.waitForStableTemperature(temperature, stabilityPct, stabilityTime)
 
         }
 
@@ -98,11 +116,11 @@ class TemperatureSweep : FetChSweep<Double>("Temperature Sweep", "T") {
             task?.stop()
         }
 
-        override fun getColumns(): Array<Col> {
+        override fun getColumns(): Array<Column<*>> {
 
             return arrayOf(
-                Col("Time","s"),
-                Col("Temperature", "K")
+                TIME,
+                TEMPERATURE
             )
 
         }

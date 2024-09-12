@@ -1,7 +1,8 @@
 package org.oefet.fetch.gui.elements
 
-import jisa.experiment.ResultTable
-import jisa.gui.*
+import jisa.gui.Colour
+import jisa.gui.Series
+import jisa.results.ResultTable
 import org.oefet.fetch.measurement.Output
 import kotlin.math.abs
 
@@ -22,7 +23,7 @@ class SyncPlot(data: ResultTable) : FetChPlot("Synced Voltage Curve", "Voltage [
 
         isMouseEnabled = true
         yAxisType      = AxisType.LOGARITHMIC
-        pointOrdering  = Sort.ORDER_ADDED
+        
 
         createSeries()
             .setName("Drain")

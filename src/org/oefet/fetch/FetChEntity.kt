@@ -1,39 +1,74 @@
 package org.oefet.fetch
 
+import javafx.scene.image.Image
+import jisa.devices.Configuration
 import jisa.devices.interfaces.Instrument
 import jisa.experiment.Measurement
-import jisa.experiment.ResultTable
+import jisa.gui.CheckGrid
+import jisa.gui.Element
+import jisa.gui.Field
+import jisa.gui.Fields
+import jisa.logging.Logger
 import jisa.maths.Range
+import jisa.results.Column
+import jisa.results.ResultTable
 import org.oefet.fetch.gui.elements.FetChPlot
 import java.util.*
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty
+import kotlin.reflect.full.companionObjectInstance
 
 abstract class FetChEntity : Measurement() {
 
-    private   val errors        = LinkedList<String>()
-    protected val setters       = LinkedList<() -> Unit>()
+    private val errors  = LinkedList<String>()
+    private val setters = LinkedList<() -> Unit>()
+    private val columns = LinkedList<Column<*>>()
+    abstract val image: Image
 
-    open fun createPlot(data: ResultTable): FetChPlot {
+    open fun createDisplay(data: ResultTable): Element {
+
         return FetChPlot(name).apply {
-            createSeries().watchAll(data)
+
+            if (data.numericColumns.size >= 2) {
+                createSeries().watch(data, data.getNthNumericColumn(0), data.getNthNumericColumn(1))
+            }
+
         }
+
     }
+
+    operator fun <T> Column<T>.rangeTo(value: T): Pair<Column<T>, T> = this to value
 
     /**
      * Checks that everything required for this measurement is present. Returns all missing instrument errors as
      * a list of strings. Measurement will only go ahead if this list is empty.
      */
-    open fun checkForErrors() : List<String> = emptyList()
+    open fun checkForErrors(): List<String> = emptyList()
 
-    open fun loadInstruments() {
+    open fun loadInstruments(errors: Boolean = false) {
+
         setters.forEach { it() }
+
+        if (!errors) {
+            this.errors.clear()
+        }
+
+    }
+
+    open fun getExtraTabs(): List<Element> {
+        return emptyList()
+    }
+
+    open fun getCustomParams(): List<Element> {
+        return emptyList()
     }
 
     override fun start() {
 
+        Logger.addMessage("Running $name.")
+
         errors.clear()
-        loadInstruments()
+        loadInstruments(true)
 
         errors += checkForErrors()
 
@@ -45,6 +80,18 @@ abstract class FetChEntity : Measurement() {
 
     }
 
+    fun message(message: String) {
+        Logger.addMessage("$name: $message")
+    }
+
+    fun warning(message: String) {
+        Logger.addWarning("$name: $message")
+    }
+
+    fun error(message: String) {
+        Logger.addError("$name: $message")
+    }
+
     override fun onError() {
 
     }
@@ -53,90 +100,127 @@ abstract class FetChEntity : Measurement() {
 
     }
 
-    fun <I: Instrument> optionalConfig(name: String, type: KClass<I>): ODelegate<I?> {
+    fun <I : Instrument> optionalInstrument(name: String, type: KClass<I>): ODelegate<I?> {
 
-        val config = addInstrument(name, type.java)
-        val del    = ODelegate<I?>(name, errors)
+        val config = addInstrument("$name (Optional)", type.java)
+        val del = ODelegate<I?>(config)
 
-        setters += {del.setValue(config.instrument)}
-
-        return del
-
-    }
-
-    fun <I: Instrument> requiredConfig(name: String, type: KClass<I>): RDelegate<I> {
-
-        val config = addInstrument(name, type.java)
-        val del    = RDelegate<I>()
-
-        setters += {
-
-            val inst = config.instrument
-
-            if (inst != null) {
-                del.setValue(config.instrument)
-            } else {
-                errors += "$name is not configured"
-            }
-
-        }
+        setters += { del.setNow(errors) }
 
         return del
 
     }
 
-    fun <T> input(parameter: Parameter<T>) : PDelegate<T> {
+    fun <I : Instrument> requiredInstrument(name: String, type: KClass<I>): RDelegate<I> {
+
+        val config = addInstrument("$name (Required)", type.java)
+        val del = RDelegate<I>(config)
+
+        setters += { del.setNow(errors) }
+
+        return del
+
+    }
+
+    fun <T> userInput(parameter: Parameter<T>): PDelegate<T> {
         return PDelegate(parameter)
     }
 
-    fun input(section: String, name: String, defaultValue: String) : PDelegate<String> {
-        return input(StringParameter(section, name, null, defaultValue))
+    fun userInput(section: String, name: String, defaultValue: String): PDelegate<String> {
+        return userInput(StringParameter(section, name, null, defaultValue))
     }
 
-    fun input (name: String, defaultValue: String) : PDelegate<String> {
-        return input("Basic", name, defaultValue)
+    fun userInput(name: String, defaultValue: String): PDelegate<String> {
+        return userInput("Basic", name, defaultValue)
     }
 
-    fun input(section: String, name: String, defaultValue: Double) : PDelegate<Double> {
-        return input(DoubleParameter(section, name, null, defaultValue))
+    fun userInput(section: String, name: String, defaultValue: Double): PDelegate<Double> {
+        return userInput(DoubleParameter(section, name, null, defaultValue))
     }
 
-    fun input (name: String, defaultValue: Double) : PDelegate<Double> {
-        return input("Basic", name, defaultValue)
+    fun userInput(name: String, defaultValue: Double): PDelegate<Double> {
+        return userInput("Basic", name, defaultValue)
     }
 
-    fun input(section: String, name: String, defaultValue: Int) : PDelegate<Int> {
-        return input(IntegerParameter(section, name, null, defaultValue))
-
+    fun userInput(section: String, name: String, defaultValue: Int): PDelegate<Int> {
+        return userInput(IntegerParameter(section, name, null, defaultValue))
     }
 
-    fun input (name: String, defaultValue: Int) : PDelegate<Int> {
-        return input("Basic", name, defaultValue)
+    fun userInput(name: String, defaultValue: Int): PDelegate<Int> {
+        return userInput("Basic", name, defaultValue)
     }
 
-    fun input(section: String, name: String, defaultValue: Boolean) : PDelegate<Boolean> {
-        return input(BooleanParameter(section, name, null, defaultValue))
-
-    }
-
-    fun input (name: String, defaultValue: Boolean) : PDelegate<Boolean> {
-        return input("Basic", name, defaultValue)
-    }
-
-    fun choice(section: String, name: String, vararg options: String) : PDelegate<Int> {
-        return input(ChoiceParameter(section, name, 0, *options))
+    fun userInput(section: String, name: String, defaultValue: Boolean): PDelegate<Boolean> {
+        return userInput(BooleanParameter(section, name, null, defaultValue))
 
     }
 
-    fun input(section: String, name: String, defaultValue: Range<Double>) : PDelegate<Range<Double>> {
-        return input(RangeParameter(section, name, null, defaultValue))
+    fun userInput(name: String, defaultValue: Boolean): PDelegate<Boolean> {
+        return userInput("Basic", name, defaultValue)
     }
 
-    fun input (name: String, defaultValue: Range<Double>) : PDelegate<Range<Double>> {
-        return input("Basic", name, defaultValue)
+    fun userChoice(section: String, name: String, vararg options: String): PDelegate<Int> {
+        return userInput(ChoiceParameter(section, name, 0, *options))
     }
 
-    fun runRegardless (toRun: () -> Unit) {
+    fun userInput(section: String, name: String, defaultValue: Range<Double>): PDelegate<Range<Double>> {
+        return userInput(RangeParameter(section, name, null, defaultValue))
+    }
+
+    fun userInput(name: String, defaultValue: Range<Double>): PDelegate<Range<Double>> {
+        return userInput("Basic", name, defaultValue)
+    }
+
+    fun userTimeInput(section: String, name: String, defaultValue: Int): PDelegate<Int> {
+        return userInput(TimeParameter(section, name, defaultValue))
+    }
+
+    fun userTimeInput(name: String, defaultValue: Int): PDelegate<Int> {
+        return userTimeInput("Basic", name, defaultValue)
+    }
+
+    fun <I> customInput(tag: String, element: Element, getter: () -> I, setter: (I) -> Unit): PDelegate<I> {
+        return userInput(CustomParameter(tag, element, getter, setter))
+    }
+
+    fun <I> customInput(
+        tag: String,
+        element: Element,
+        getter: () -> I,
+        setter: (I) -> Unit,
+        reader: (String?) -> I?,
+        writer: (I) -> String
+    ): PDelegate<I> {
+
+        return userInput(CustomParameter(
+            tag,
+            element,
+            getter,
+            setter,
+            { b -> reader(b.stringValue(tag).getOrDefault(null)) ?: getter() },
+            { b, v -> b.stringValue(tag).set(writer(v)) }
+        ))
+
+    }
+
+    fun customInput(checkGrid: CheckGrid): PDelegate<Array<BooleanArray>> {
+
+        return customInput(
+            checkGrid.title,
+            checkGrid,
+            checkGrid::getValues,
+            checkGrid::setValues,
+            { it?.split(";")?.map { it.split(",").map(String::toBoolean).toBooleanArray() }?.toTypedArray() },
+            { it.joinToString(";") { it.joinToString(",") } }
+        )
+
+    }
+
+    fun <I> customInput(fields: Fields, field: Field<I>): PDelegate<I> {
+        return customInput(field.text, fields, field::get, field::set)
+    }
+
+    fun runRegardless(toRun: () -> Unit) {
 
         try {
             toRun()
@@ -146,7 +230,17 @@ abstract class FetChEntity : Measurement() {
 
     }
 
-    class MDelegate<T,M>(private val parameter: Parameter<T>, private val map: (T) -> M) {
+    fun runRegardless(vararg toRun: () -> Unit) {
+        for (run in toRun) {
+            try {
+                run()
+            } catch (e: Throwable) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    class MDelegate<T, M>(private val parameter: Parameter<T>, private val map: (T) -> M) {
 
         operator fun getValue(thisRef: Any?, property: KProperty<*>): M {
             return map(parameter.value)
@@ -164,48 +258,72 @@ abstract class FetChEntity : Measurement() {
             parameter.value = value
         }
 
-        infix fun <M> map(mapper: (I) -> M): MDelegate<I,M> {
+        infix fun <M> map(mapper: (I) -> M): MDelegate<I, M> {
             return MDelegate(parameter, mapper)
         }
 
     }
 
-    class ODelegate<I: Instrument?>(private val name: String, private val errors: MutableList<String>) {
+    class ODelegate<I : Instrument?>(private val conf: Configuration<I>) {
 
         private var instrument: I? = null
         private var condition: () -> Boolean = { false }
+        private var set: Boolean = false
 
-        fun setValue(instrument: I?) {
-
-            this.instrument = instrument
-
-            if (condition() && instrument == null) {
-                errors.add("$name is not configured")
-            }
-
+        init {
+            conf.addChangeListener { set = false }
         }
 
         operator fun getValue(thisRef: Any?, property: KProperty<*>): I? {
+            if (!set) setNow()
             return instrument
         }
 
-        infix fun requiredIf(condition: () -> Boolean) : ODelegate<I> {
+        infix fun requiredIf(condition: () -> Boolean): ODelegate<I> {
             this.condition = condition
             return this
         }
 
+        fun setNow(errors: MutableList<String> = ArrayList()) {
+
+            this.instrument = conf.instrument
+
+            if (condition() && instrument == null) {
+                errors.add("${conf.name} is not configured")
+            }
+
+            set = true;
+
+        }
+
     }
 
-    class RDelegate<I: Instrument> {
+    class RDelegate<I : Instrument>(private val conf: Configuration<I>) {
 
         private lateinit var instrument: I
+        private var set: Boolean = false
 
-        fun setValue(instrument: I) {
-            this.instrument = instrument
+        init {
+            conf.addChangeListener { set = false }
         }
 
         operator fun getValue(thisRef: Any?, property: KProperty<*>): I {
+            if (!set) setNow()
+            if (!set) throw Exception("${conf.name} is not configured")
             return instrument
+        }
+
+        fun setNow(errors: MutableList<String> = ArrayList()) {
+
+            val instrument = conf.instrument
+
+            if (instrument == null) {
+                errors.add("${conf.name} is not configured")
+            } else {
+                this.instrument = instrument
+                set = true;
+            }
+
         }
 
     }
@@ -218,6 +336,31 @@ abstract class FetChEntity : Measurement() {
         return this.toDouble() / 1e3
     }
 
+    override fun getColumns(): Array<Column<*>> {
+
+        val companion = this::class.companionObjectInstance
+
+        if (companion is Columns) {
+            return companion.getColumns()
+        } else {
+            return emptyArray()
+        }
+
+    }
+
+    open class Columns {
+
+        protected fun decimalColumn(name: String, units: String? = null) = Column.ofDecimals(name, units).also { COLUMNS += it }
+        protected fun integerColumn(name: String, units: String? = null) = Column.ofIntegers(name, units).also { COLUMNS += it }
+        protected fun longColumn(name: String, units: String? = null)    = Column.ofLongs(name, units).also { COLUMNS += it }
+        protected fun textColumn(name: String, units: String? = null)    = Column.ofText(name, units).also { COLUMNS += it }
+        protected fun booleanColumn(name: String, units: String? = null) = Column.ofBooleans(name, units).also { COLUMNS += it }
+
+        private val COLUMNS = ArrayList<Column<*>>()
+
+        fun getColumns(): Array<Column<*>> = COLUMNS.toTypedArray()
+
+    }
 
 
 }

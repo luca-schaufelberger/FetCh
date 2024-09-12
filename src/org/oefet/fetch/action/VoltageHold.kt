@@ -1,40 +1,62 @@
 package org.oefet.fetch.action
 
+import javafx.scene.image.Image
 import jisa.Util
 import jisa.control.RTask
 import jisa.devices.interfaces.SMU
-import jisa.experiment.Col
-import jisa.experiment.ResultTable
 import jisa.gui.Colour
+import jisa.gui.GUI
+import jisa.results.ResultTable
 import org.oefet.fetch.gui.elements.FetChPlot
 
-class VoltageHold : FetChAction("Hold") {
+class VoltageHold : FetChAction("Hold", Image(GUI::class.java.getResource("images/smu.png")?.toString())) {
 
     var task: RTask? = null
 
-    val time      by input("Basic", "Hold Time [s]", 600.0) map { it.toMSec() }
-    val interval  by input("Basic", "Logging Interval [s]", 0.5) map { it.toMSec().toLong() }
-    val useSD     by input("Source-Drain", "Enabled", false)
-    val sdVoltage by input("Source-Drain", "Voltage [V]", 50.0)
-    val useSG     by input("Source-Gate", "Enabled", false)
-    val sgVoltage by input("Source-Gate", "Voltage [V]", 50.0)
+    // Parameters
+    val time      by userTimeInput("Basic", "Hold Time", 600000)
+    val interval  by userTimeInput("Basic", "Logging Interval", 500)
+    val useSD     by userInput("Source-Drain", "Enabled", false)
+    val sdVoltage by userInput("Source-Drain", "Voltage [V]", 50.0)
+    val useSG     by userInput("Source-Gate", "Enabled", false)
+    val sgVoltage by userInput("Source-Gate", "Voltage [V]", 50.0)
 
-    val sdSMU by optionalConfig("Source-Drain Channel", SMU::class) requiredIf { useSD }
-    val sgSMU by optionalConfig("Source-Gate Channel", SMU::class)  requiredIf { useSG }
+    // Instruments
+    val sdSMU by optionalInstrument("Source-Drain Channel", SMU::class) requiredIf { useSD }
+    val sgSMU by optionalInstrument("Source-Gate Channel", SMU::class) requiredIf { useSG }
 
-    override fun createPlot(data: ResultTable): FetChPlot {
+    // Data columns
+    companion object : Columns() {
+        val TIME       = decimalColumn("Time", "s")
+        val SD_VOLTAGE = decimalColumn("Source-Drain Voltage", "V")
+        val SG_VOLTAGE = decimalColumn("Source-Gate Voltage", "V")
+    }
+
+    override fun createDisplay(data: ResultTable): FetChPlot {
 
         return FetChPlot("Hold Voltages", "Time [s]", "Voltage [V]").apply {
-            createSeries().watch(data, 0, 1).setName("Source-Drain").setMarkerVisible(false).setColour(Colour.ORANGERED)
-            createSeries().watch(data, 0, 2).setName("Source-Gate").setMarkerVisible(false).setColour(Colour.CORNFLOWERBLUE)
+
+            createSeries()
+                .watch(data, TIME, SD_VOLTAGE)
+                .setName("Source-Drain")
+                .setMarkerVisible(false)
+                .setColour(Colour.ORANGERED)
+
+            createSeries()
+                .watch(data, TIME, SG_VOLTAGE)
+                .setName("Source-Gate")
+                .setMarkerVisible(false)
+                .setColour(Colour.CORNFLOWERBLUE)
+
             isLegendVisible = true
+
         }
 
     }
 
     override fun run(results: ResultTable) {
 
-        task = RTask(interval) { t ->
+        task = RTask(interval.toLong()) { t ->
 
             results.addData(
                 t.secFromStart,
@@ -72,18 +94,15 @@ class VoltageHold : FetChAction("Hold") {
         task?.stop()
     }
 
-    override fun getColumns(): Array<Col> {
-
-        return arrayOf(
-            Col("Time","s"),
-            Col("Source-Drain Voltage", "V"),
-            Col("Source-Gate Voltage", "V")
-        )
-
-    }
-
     override fun getLabel(): String {
-        return "${if (useSD) "SD = $sdVoltage V " else ""}${if (useSG) "SG = $sgVoltage V " else ""}for ${Util.msToString(time.toLong())}"
+
+        return buildString {
+            if (useSD) append("SD = $sdVoltage V ")
+            if (useSG) append("SG = $sgVoltage V ")
+            append("for ")
+            append(Util.msToString(time.toLong()))
+        }
+
     }
 
 }

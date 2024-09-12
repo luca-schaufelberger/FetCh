@@ -1,8 +1,10 @@
 package org.oefet.fetch.gui.elements
 
-import jisa.experiment.ResultList
-import jisa.experiment.ResultTable
 import jisa.gui.Colour
+import jisa.maths.fits.Fitting
+import jisa.results.DoubleColumn
+import jisa.results.ResultList
+import jisa.results.ResultTable
 import org.oefet.fetch.measurement.TVCalibration
 import org.oefet.fetch.measurement.TVMeasurement
 
@@ -17,9 +19,9 @@ class TVPlot(data: ResultTable) : FetChPlot("Thermal Voltage", "Heater Power [W]
     init {
 
         isMouseEnabled = true
-        pointOrdering  = Sort.ORDER_ADDED
+        
 
-        if (THERMAL_VOLTAGE_ERROR != -1) {
+        if (THERMAL_VOLTAGE_ERROR != null) {
 
             createSeries()
                 .setLineVisible(false)
@@ -58,10 +60,10 @@ class TVCPlot(data: ResultTable) : FetChPlot("Thermal Voltage Calibration", "Hea
     init {
 
         isMouseEnabled  = true
-        pointOrdering   = Sort.ORDER_ADDED
+        
         isLegendVisible = false
 
-        if (STRIP_VOLTAGE_ERROR != -1) {
+        if (STRIP_VOLTAGE_ERROR != null) {
 
             createSeries()
                 .setLineVisible(true)
@@ -101,21 +103,25 @@ class TVCResultPlot(data: ResultTable) : FetChPlot("Thermal Voltage Calibration"
     init {
 
         isMouseEnabled  = true
-        pointOrdering   = Sort.ORDER_ADDED
+        
         isLegendVisible = false
 
-        val fitted = ResultList("Heater Power", "Resistance", "Error")
+        val POWER = DoubleColumn("Heater Power")
+        val RES   = DoubleColumn("Resistance")
+        val ERROR = DoubleColumn("Error")
+
+        val fitted = ResultList(POWER, RES, ERROR)
 
         for ((_, splitData) in data.split(SET_HEATER_VOLTAGE)) {
 
-            val fit = splitData.linearFit(STRIP_CURRENT, STRIP_VOLTAGE)
-            fitted.addData(splitData.getMean(HEATER_POWER), fit.gradient, fit.gradientError)
+            val fit = Fitting.linearFit(splitData, STRIP_CURRENT, STRIP_VOLTAGE)
+            fitted.addData(splitData.mean(HEATER_POWER), fit.gradient, fit.gradientError)
 
         }
 
         createSeries()
             .setLineVisible(true)
-            .watch(fitted, 0, 1, 2)
+            .watch(fitted, POWER, RES, ERROR)
             .setColour(Colour.CORNFLOWERBLUE)
             .polyFit(1)
 

@@ -1,9 +1,8 @@
 package org.oefet.fetch.gui.elements
 
-import jisa.experiment.ResultTable
 
-
-import jisa.gui.*
+import jisa.gui.Series
+import jisa.results.ResultTable
 import org.oefet.fetch.measurement.Output
 import kotlin.math.abs
 
@@ -23,14 +22,6 @@ class OutputPlot(data: ResultTable) : FetChPlot("Output Curve", "SD Voltage [V]"
     init {
 
         isMouseEnabled = true
-        yAxisType = AxisType.LINEAR
-        pointOrdering = Sort.ORDER_ADDED
-
-        if (data.numRows > 0) {
-            legendRows = data.getUniqueValues(SET_SG_VOLTAGE).size
-        } else {
-            legendColumns = 2
-        }
 
         createSeries()
             .setMarkerVisible(false)
@@ -40,6 +31,7 @@ class OutputPlot(data: ResultTable) : FetChPlot("Output Curve", "SD Voltage [V]"
         createSeries()
             .setMarkerVisible(false)
             .setLineDash(Series.Dash.DOTTED)
+            .setLineWidth(1.25)
             .watch(data, { it[SD_VOLTAGE] }, { abs(it[SG_CURRENT]) })
             .split(SET_SG_VOLTAGE, "G (SG: %sV)")
 
